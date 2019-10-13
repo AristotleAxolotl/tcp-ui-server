@@ -1,5 +1,5 @@
 /* eslint-disable import/extensions */
-const Proxy = require('./proxy');
+const Proxy = require('./proxy.js');
 const Resource = require('./resource');
 const Server = require('./server');
 const Session = require('./session');
