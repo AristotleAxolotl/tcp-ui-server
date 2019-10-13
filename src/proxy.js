@@ -5,7 +5,7 @@
 /* eslint-disable global-require */
 const fetch = require('node-fetch');
 
-export class Proxy {
+module.exports = class Proxy {
   constructor() {
     this.url = '';
     this.mockData = {};
