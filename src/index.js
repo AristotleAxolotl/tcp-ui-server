@@ -1,8 +1,8 @@
 /* eslint-disable import/extensions */
-import { Proxy } from './proxy';
-import { Resource } from './resource';
-import { Server } from './server';
-import { Session } from './session';
+const Proxy = require('./proxy');
+const Resource = require('./resource');
+const Server = require('./server');
+const Session = require('./session');
 
 module.exports = {
   Proxy,
