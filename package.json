@@ -1,9 +1,9 @@
 {
   "name": "tcp-ui-server",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "main": "src/index.js",
   "files": [
-    "tcp-server/**"
+    "src/**"
   ],
   "description": "tcp-ui-server",
   "author": "tcp-ui-server",
