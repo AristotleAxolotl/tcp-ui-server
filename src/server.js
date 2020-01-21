@@ -9,7 +9,7 @@ const Session = require('./session');
 module.exports = class Server {
   constructor(opts) {
     this.opts = {
-      port: 3000,
+      port: 5000,
       session: false,
       sessionTimeout: 60 * 60 * 24,
       sessionName: uuid.v4(),
