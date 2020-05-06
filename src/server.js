@@ -1,84 +1,161 @@
-/* eslint-disable no-console */
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const uuid = require('uuid');
-const path = require('path');
+const express = require("express");
 
-const Session = require('./session');
+const Logger = require("./logger");
 
-module.exports = class Server {
-  constructor(opts) {
-    this.opts = {
+const Environment = require("./environment");
+
+const { nextTick } = require("./lib/timing");
+
+const {
+  ConfigInjector,
+  Session,
+  StaticFiles,
+  Auth,
+  JsonBodyParser,
+  ResolveImports,
+  VistaRedirect,
+  MockRequest,
+} = require("./plugins");
+
+class Server {
+  constructor(opts, envConfig) {
+    const logger = new Server._Logger();
+    this.log = logger.log;
+    this.error = logger.error;
+
+    this._envConfig = new Server._Environment(envConfig);
+
+    this._opts = {
       port: 5000,
-      session: false,
-      sessionTimeout: 60 * 60 * 24,
-      sessionName: uuid.v4(),
-      sessionSecret: uuid.v4(),
-      base: '/api',
-      path: './',
+      base: "/api",
+      path: "./",
+      ...this._envConfig.getConfigGroup("global"),
       ...opts,
     };
 
-    this.sessions = new Map();
-    this.sessionName = uuid.v4();
-    this.sessionSecret = uuid.v4();
+    this._plugins = [];
+    this._resources = [];
 
-    this.resources = new Set();
+    this._app = Server._express();
 
-    this.app = express();
+    this.addPlugin(JsonBodyParser);
+    this.addPlugin(ResolveImports);
+    this.addPlugin(ConfigInjector);
+    this.addPlugin(Session);
+    this.addPlugin(Auth);
+    this.addPlugin(StaticFiles);
+    this.addPlugin(VistaRedirect);
+    this.addPlugin(MockRequest);
   }
 
-  handleSessions(req, res, next) {
-    const sessionId = req.signedCookies[this.opts.sessionName];
-    let session = this.sessions.get(sessionId);
-    if (!sessionId || !session) {
-      session = new Session(req.ip);
-      this.sessions.set(session.id, session);
-    }
-    res.cookie(this.opts.sessionName, session.id, {
-      maxAge: this.opts.sessionTimeout,
-      signed: true,
-    });
-    req.session = session;
-    next();
+  getEnvConfig() {
+    return this._envConfig;
   }
 
-  init() {
-    if (this.opts.path) this.app.use(express.static(this.opts.path));
-
-    this.app.use(cookieParser(this.opts.sessionSecret));
-    this.app.use(express.json());
-    if (this.opts.session) this.app.use(this.handleSessions.bind(this));
-
-    const apiBase = express.Router();
-
-    this.resources.forEach(r => {
-      const { Resource, args } = r;
-      const res = new Resource(...args);
-      if (Resource.path) {
-        console.log('Attaching resource to path: ', Resource.path);
-        apiBase.use(Resource.path, res.handler());
-      } else {
-        apiBase.use(res.handler());
-      }
-    });
-
-    this.app.use(this.opts.base, apiBase);
-
-    if (this.opts.path) {
-      this.app.get('/*', (req, res) => {
-        res.sendFile(path.resolve(this.opts.path, 'index.html'));
-      });
-    }
-  }
-
-  add(Resource, ...constructorArgs) {
-    this.resources.add({ Resource, args: constructorArgs });
-  }
-
-  listen() {
-    this.app.listen(this.opts.port, () =>
-      console.log(`Server listening on port ${this.opts.port}`),
+  async _registerPlugin(Plugin, opts) {
+    const plugin = new Plugin(
+      opts || {},
+      this._envConfig.getConfigGroup(Plugin.configGroup),
+      this._opts,
+      this._envConfig.getConfigGroup("app"),
+      this._envConfig.env
     );
+    let wait = true;
+    if (typeof plugin.setup === "function") {
+      await plugin.setup();
+      wait = false;
+    }
+    if (typeof Plugin.init === "function") {
+      await Plugin.init();
+      wait = false;
+    }
+    if (wait) {
+      await nextTick();
+    }
+    if (typeof Plugin.register === "function") {
+      this.log(
+        `Registering plugin '${Plugin.name}' (${Plugin.loadPriority})...`
+      );
+      Plugin.register(this._app, plugin, this._opts);
+    }
+    return Plugin.name;
   }
-};
+
+  async init() {
+    await this._registerPlugins((loadPriority) => loadPriority > 0);
+
+    this._registerResources();
+
+    this.log("Registering late chain plugins...");
+
+    await this._registerPlugins((loadPriority) => loadPriority < 0);
+  }
+
+  _getSortPlugins() {
+    const plugins = [...this._plugins];
+    plugins.sort(
+      (a, b) => (a.Plugin.loadPriority || 0) - (b.Plugin.loadPriority || 0)
+    );
+    return plugins;
+  }
+
+  async _registerPlugins(loadPriorityFilter) {
+    const sortedPlugins = this._getSortPlugins().filter((pl) =>
+      loadPriorityFilter(pl.Plugin.loadPriority)
+    );
+    const registeredPlugins = [];
+    for (const pl of sortedPlugins) {
+      const { Plugin, opts } = pl;
+      // eslint-disable-next-line no-await-in-loop
+      const pluginName = await this._registerPlugin(Plugin, opts);
+      registeredPlugins.push(pluginName);
+    }
+    return registeredPlugins;
+  }
+
+  _registerResources() {
+    this.log("Setting up API routes...");
+
+    const apiBase = Server._express.Router();
+    for (const r of this._resources) {
+      const { Resource, proxies } = r;
+      const res = new Resource(proxies);
+      res.setConfig(this._envConfig.getConfigGroup("app"));
+      res.setEnv(this._envConfig.env);
+      if (Resource.path) {
+        this.log(`Attaching '${Resource.name}' to path: ${Resource.path}`);
+        apiBase.use(Resource.path, res.handler(this._envConfig));
+      } else {
+        throw new Error(`${Resource.name} needs a path!`);
+      }
+    }
+    this._app.use(this._opts.base, apiBase);
+  }
+
+  addResource(Resource, proxies) {
+    this._resources.push({ Resource, proxies });
+  }
+
+  addPlugin(Plugin, opts) {
+    this._plugins.push({ Plugin, opts });
+  }
+
+  clearPlugins() {
+    this._plugins = [];
+  }
+
+  clearResources() {
+    this._resources = [];
+  }
+
+  async listen() {
+    await this._app.listen(this._opts.port);
+    this.log(`Server listening on port ${this._opts.port}`);
+  }
+}
+
+module.exports = Server;
+
+Server._Logger = Logger;
+Server._express = express;
+Server._Environment = Environment;
