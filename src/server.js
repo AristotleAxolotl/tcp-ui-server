@@ -9,11 +9,7 @@ const { nextTick } = require("./lib/timing");
 const {
   ConfigInjector,
   Session,
-  StaticFiles,
-  Auth,
   JsonBodyParser,
-  ResolveImports,
-  VistaRedirect,
   MockRequest,
 } = require("./plugins");
 
@@ -39,12 +35,8 @@ class Server {
     this._app = Server._express();
 
     this.addPlugin(JsonBodyParser);
-    this.addPlugin(ResolveImports);
     this.addPlugin(ConfigInjector);
     this.addPlugin(Session);
-    this.addPlugin(Auth);
-    this.addPlugin(StaticFiles);
-    this.addPlugin(VistaRedirect);
     this.addPlugin(MockRequest);
   }
 
