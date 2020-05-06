@@ -9,6 +9,7 @@ const { nextTick } = require("./lib/timing");
 const {
   ConfigInjector,
   Session,
+  StaticFiles,
   JsonBodyParser,
   MockRequest,
 } = require("./plugins");
@@ -37,6 +38,7 @@ class Server {
     this.addPlugin(JsonBodyParser);
     this.addPlugin(ConfigInjector);
     this.addPlugin(Session);
+    this.addPlugin(StaticFiles);
     this.addPlugin(MockRequest);
   }
 
