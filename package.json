@@ -9,10 +9,15 @@
   "author": "tcp-ui-server",
   "scripts": {},
   "dependencies": {
+    "babel-file": "3.0.*",
+    "chai-as-promised": "7.1.*",
     "cookie-parser": "1.4.*",
     "express": "4.17.*",
+    "fs-extra": "8.1.*",
+    "jwt-decode": "2.2.*",
     "node-fetch": "2.6.*",
-    "uuid": "3.3.*"
+    "sqlite": "3.0.*",
+    "uuid": "7.0.*"
   },
   "devDependencies": {}
 }
